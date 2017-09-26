@@ -82,11 +82,6 @@ sub vcl_recv {
 		return(pass);
 	}
 
-	# Respect the browser's desire for a fresh copy on hard refresh
-	if (req.http.Cache-Control == "no-cache") {
-		ban("req.http.host == " + req.http.host + " && req.url == " + req.url);
-	}
-
 	# Not cacheable by default
 	if (req.http.Authorization) {
 		return (pass);
@@ -147,6 +142,12 @@ sub vcl_recv {
 	# Strip a trailing ? if it exists
 	if (req.url ~ "\?$") {
 		set req.url = regsub(req.url, "\?$", "");
+	}
+
+	# Respect the browser's desire for a fresh copy on hard refresh
+	# This ban will only work if there are no further URL changes (e.g. set req.url = ...) after it.
+	if (req.http.Cache-Control == "no-cache") {
+		ban("req.http.host == " + req.http.host + " && req.url == " + req.url);
 	}
 
 	# Remove all cookies to enable caching
