@@ -131,6 +131,7 @@ sub vcl_recv {
 	# Some generic URL manipulation, useful for all templates that follow
 	# First remove the Google Analytics added parameters, useless for our backend
 	# Also remove the gc_source parameter used for tracking internal sources on the website
+	# And the mkt_tok parameter used by Marketo to track emails
 	if (req.url ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=") {
 		set req.url = regsuball(req.url, "&(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "");
 		set req.url = regsuball(req.url, "\?(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "?");
