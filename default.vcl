@@ -162,14 +162,17 @@ sub vcl_backend_response {
 	# Here you clean the response headers, removing silly Set-Cookie headers
 	# and other mistakes your backend does.
 
-	# Sometimes, a 301 or 302 redirect formed via Apache's mod_rewrite can mess with the HTTP port that is being passed along.
-	# This often happens with simple rewrite rules in a scenario where Varnish runs on :80 and Apache on :8080 on the same box.
-	# A redirect can then often redirect the end-user to a URL on :8080, where it should be :80.
-	# This may need finetuning on your setup.
-	#
-	# To prevent accidental replace, we only filter the 301/302 redirects for now.
 	if (beresp.status == 301 || beresp.status == 302) {
+		# Sometimes, a 301 or 302 redirect formed via Apache's mod_rewrite can mess with the HTTP port that is being passed along.
+		# This often happens with simple rewrite rules in a scenario where Varnish runs on :80 and Apache on :8080 on the same box.
+		# A redirect can then often redirect the end-user to a URL on :8080, where it should be :80.
+		# This may need finetuning on your setup.
+		#
+		# To prevent accidental replace, we only filter the 301/302 redirects for now.
 		set beresp.http.Location = regsub(beresp.http.Location, ":[0-9]+", "");
+
+		# Don't cache redirects. Otherwise they're much more difficult to debug!
+		set beresp.ttl = 0s;
 	}
 
 	# For debugging TTL
