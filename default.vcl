@@ -37,10 +37,15 @@ sub vcl_recv {
 	# rewriting the request, etc.
 
 	# Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
-  	unset req.http.proxy;
+	unset req.http.proxy;
 
-  	# Normalize the query arguments
-  	set req.url = std.querysort(req.url);
+	# Normalize the query arguments (sort alphabetically)
+	set req.url = std.querysort(req.url);
+
+	# Strip a trailing ? if it exists
+	if (req.url ~ "\?$") {
+		set req.url = regsub(req.url, "\?$", "");
+	}
 
 	# Allow purging of single urls
 	if (req.method == "PURGE") {
@@ -123,27 +128,6 @@ sub vcl_recv {
 		return (pipe);
 	}
 
-	# Some generic URL manipulation, useful for all templates that follow
-	# First remove the Google Analytics added parameters, useless for our backend
-	# Also remove the gc_source parameter used for tracking internal sources on the website
-	# And the mkt_tok parameter used by Marketo to track emails
-	if (req.url ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=") {
-		set req.url = regsuball(req.url, "&(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "");
-		set req.url = regsuball(req.url, "\?(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "?");
-		set req.url = regsub(req.url, "\?&", "?");
-		set req.url = regsub(req.url, "\?$", "");
-	}
-
-	# Strip hash, server doesn't need it.
-	if (req.url ~ "\#") {
-		set req.url = regsub(req.url, "\#.*$", "");
-	}
-
-	# Strip a trailing ? if it exists
-	if (req.url ~ "\?$") {
-		set req.url = regsub(req.url, "\?$", "");
-	}
-
 	# Respect the browser's desire for a fresh copy on hard refresh
 	# This ban will only work if there are no further URL changes (e.g. set req.url = ...) after it.
 	if (req.http.Cache-Control == "no-cache") {
@@ -154,6 +138,44 @@ sub vcl_recv {
 	unset req.http.Cookie;
 
 	return (hash);
+}
+
+sub vcl_hash {
+	# The following url transformations help Varnish cache fewer
+	# versions of the same content by ignoring marketing url parameters
+	# and hashes. 
+	# 
+	# req.http.newUrl replaces req.url *for cache validation only*
+	# Marketing parameters and hashes must still be sent to the backend
+	# b/c even though they don't influence content, they should be included
+	# in any redirects the backend generates. 
+
+	# Ignore marketing-related url parameters when caching urls
+	# 	utm_ (Google Analytics)
+	# 	gclid, cx, ie, cof, siteurl (not sure what these do)
+	# 	gc_source (Goshen College internal campaign tracking)
+	# 	mkt_tok (Marketo email click tracking)
+	set req.http.newUrl = req.url;
+	if (req.http.newUrl ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=") {
+		set req.http.newUrl = regsuball(req.http.newUrl, "&(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "");
+		set req.http.newUrl = regsuball(req.http.newUrl, "\?(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|gc_source|mkt_tok)=([A-z0-9_\-\.%25]+)", "?");
+		set req.http.newUrl = regsub(req.http.newUrl, "\?&", "?");
+		set req.http.newUrl = regsub(req.http.newUrl, "\?$", "");
+	}
+
+	# Ignore hash when caching urls
+	if (req.http.newUrl ~ "\#") {
+		set req.http.newUrl = regsub(req.http.newUrl, "\#.*$", "");
+	}
+
+	# Default vcl_hash, except replaced "req.url" with "req.http.newUrl"
+	hash_data(req.http.newUrl);
+	if (req.http.host) {
+		hash_data(req.http.host);
+	} else {
+		hash_data(server.ip);
+	}
+	return (lookup);
 }
 
 
